@@ -1,1 +1,18 @@
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaajjjjjjjjjjjjjjjjjjjjjjjjjjjjsssssssssssssssssssssmmmmmmmmmmmmmmmmm11111111111122222222222222
+DOS Headers
+Magic number 0x5a4d
+Bytes on last page of file 90
+Pages in file 3
+Relocations 0
+Size of header in paragraphs 4
+Minimum extra paragraphs needed 0
+Maximum extra paragraphs needed ffff
+Initial(relative) SS value 0
+Checksum 0
+Initial IP Value 0
+Initial CS Value 0
+File address of relocation table 40
+Reserved words 0
+OEM identifier 0
+OEM Information 0
+Reserved words 80
+File address of new exe header 80
