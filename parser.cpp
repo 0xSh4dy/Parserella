@@ -30,7 +30,7 @@ class PE32_Parser:public PE32_Structure{
     public:
 
     PE32_Parser(){
-        fileBuffer = (char*)malloc(0x1000);
+        fileBuffer = (char*)malloc(0x5000);
         fp = fopen(FILENAME,"rb");
         if(!fp){
             cout<<FRED("Failed to open the file")<<endl;
@@ -199,21 +199,31 @@ class PE32_Parser:public PE32_Structure{
             };
         }
     }
-        int fetchSection(DWORD searchParam){
+        pair<int,PIMAGE_SECTION_HEADER>fetchSection(DWORD searchParam){
             int off_section = offset_nt + sizeof(IMAGE_NT_HEADERS32);
-            IMAGE_SECTION_HEADER scnHdr;
+            PIMAGE_SECTION_HEADER scnHdr = (IMAGE_SECTION_HEADER*)malloc(0x100);
             int n_sections = fileHeader.NumberOfSections;
             for(int i=0;i<n_sections;i++){
                 fseek(fp,off_section,SEEK_SET);
-                fread(&scnHdr,SIZE_SECTION_HEADER32,1,fp);
+                fread(scnHdr,SIZE_SECTION_HEADER32,1,fp);
                 off_section += SIZE_SECTION_HEADER32;
-                if(IN_RANGE(searchParam,scnHdr.VirtualAddress,scnHdr.VirtualAddress+scnHdr.Misc.VirtualSize)){
-                    return i;
+                if(IN_RANGE(searchParam,scnHdr->VirtualAddress,scnHdr->VirtualAddress+scnHdr->Misc.VirtualSize)){
+                    return make_pair(i,scnHdr);
             };
             }
-            return -1;
+            return make_pair(-1,(PIMAGE_SECTION_HEADER)0);
         }
-    void ShowDLLImports(){
+    
+    int ResolveAddress(DWORD address){
+        PIMAGE_SECTION_HEADER scnHdr; 
+        pair<int,PIMAGE_SECTION_HEADER>retPair = fetchSection(address);
+        scnHdr = retPair.second;
+        int answer = address -scnHdr->VirtualAddress + scnHdr->PointerToRawData;
+        free(scnHdr);
+        scnHdr = 0;
+        return answer;
+    }
+    void ParseImports(){
         cout<<FYEL("...........................................................................")<<endl;
         cout<<FBLU("DLL Imports")<<endl;
         cout<<FMAG("Imports are present in ")<<importSection.Name<<endl;
@@ -221,7 +231,8 @@ class PE32_Parser:public PE32_Structure{
         int import_dir_count = 0;
         int import_dir_size;
         int offset = importDir.VirtualAddress - importSection.VirtualAddress +importSection.PointerToRawData;
-        int offset_old = offset;
+        int offset_old  = offset;
+        int off = offset;
         while(true){
             import_dir_count += 1;
             IMAGE_IMPORT_DESCRIPTOR iDesc; 
@@ -242,7 +253,47 @@ class PE32_Parser:public PE32_Structure{
             offset_old+=20;
         }
         
-        cout<<fetchSection(0x7000);
+        for(int i=0;i<import_dir_count;i++){
+            char* dllBuf = (char*)malloc(MAX_PATH);
+            PIMAGE_THUNK_DATA32 thunkData = (PIMAGE_THUNK_DATA)malloc(0x1000);
+            cout<<FYEL(".................")<<endl;
+            DWORD resolvedAddress = ResolveAddress(importTable[i].Name);
+            DWORD ILT_address = ResolveAddress(importTable[i].OriginalFirstThunk);
+            fseek(fp,resolvedAddress,SEEK_SET);
+            fread(dllBuf,MAX_PATH,1,fp);
+            cout<<FCYN("Imported library ")<<dllBuf<<endl;
+            cout<<FCYN("Offset")<<space<<off<<endl;
+            cout<<FCYN("Name RVA")<<space<<importTable[i].Name<<endl;
+            cout<<FCYN("Original First Thunk (ILT RVA)")<<space<<importTable[i].OriginalFirstThunk<<endl;
+            cout<<FCYN("First Thunk (IAT RVA)")<<space<<importTable[i].FirstThunk<<endl;
+            cout<<FCYN("Forwarder")<<space<<importTable[i].ForwarderChain<<endl;
+            cout<<FCYN("Time Date Stamp")<<space<<importTable[i].TimeDateStamp<<endl;
+            cout<<FYEL(".................")<<endl;
+            cout<<FBLU("List of functions imported from ")<<dllBuf<<": "<<endl;
+            int ctr = 0;
+            printf(KMAG "[ " RST);
+            while(true){
+                char* fn_name = (char*)malloc(100);
+                fseek(fp,ILT_address+ctr,SEEK_SET);
+                fread(thunkData,sizeof(IMAGE_THUNK_DATA32),1,fp);
+                if(thunkData->u1.AddressOfData==0){
+                    break;
+                }
+                DWORD resU1Addr = ResolveAddress(thunkData->u1.AddressOfData);
+                fseek(fp,resU1Addr+2,SEEK_SET);
+                fread(fn_name,64,1,fp);
+                printf(KGRN "%s,  ",fn_name);
+                free(fn_name);
+                fn_name = NULL;
+                ctr += 4;
+            }
+            printf(KMAG" ]\n" RST);
+            off += 20;
+            free(dllBuf);
+            free(thunkData);
+            thunkData = NULL;
+            dllBuf = NULL;
+        }
     }
   ~PE32_Parser(){
      free(fileBuffer);
@@ -260,7 +311,7 @@ void ParserInit(){
     parser.ParseOptionalHeaders();
     parser.ParseDataDirectories();
     parser.ParseSectionHeaders();
-    parser.ShowDLLImports();
+    parser.ParseImports();
 }
 
 int main(int argc, char**argv){
